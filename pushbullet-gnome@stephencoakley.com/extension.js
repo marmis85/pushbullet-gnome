@@ -10,40 +10,7 @@ const PushbulletApi = Pushbullet.imports.pushbulletApi;
 const Settings = Pushbullet.imports.settings;
 
 
-let settings, notifications, apiClient, _timeoutId;
-
-/**
- * Schedues a check for new notifications.
- *
- * @param Number timeout
- * The number of milliseconds to from now to schedule the check at.
- */
-function scheduleCheck(timeout) {
-    if (_timeoutId != 0) {
-        MainLoop.source_remove (_timeoutId);
-    }
-
-    _timeoutId = MainLoop.timeout_add(timeout, function() {
-        let lastChecked = settings.get_double("last-checked");
-
-        apiClient.getPushes(lastChecked, function(response) {
-            if (response.error) {
-                notifications.showNotePush({ title: "Error", body: response.error.message });
-            }
-            else {
-                let i = 0, n = response.pushes.length - 1, m = settings.get_int("max-push-count");
-                while (i <= n && i < m) {
-                    notifications.showPush(response.pushes[n - i]);
-                    i++;
-                }
-
-                // update last checked timestamp
-                settings.set_double("last-checked", Math.ceil(response.pushes[n - i - 1].modified));
-            }
-            scheduleCheck(settings.get_int("check-frequency") * 1000);
-        });
-    });
-}
+let settings, notifications, apiClient;
 
 /**
  * Initializes the extension.
@@ -62,20 +29,31 @@ function init(metadata) {
  */
 function enable() {
     settings = new Settings.Settings("org.gnome.shell.extensions.pushbullet");
-    apiClient = new PushbulletApi.ApiClient();
-
     notifications = new Notifications.NotificationSource();
-    notifications.register();
-
-    // init last checked timestamp if this is our first time enabled
-    if (settings.get_double("last-checked") == 0) {
-        settings.set_double("last-checked", (GLib.get_real_time() / 1000000) - 86400);
-    }
 
     if (settings.get_string("api-key") != "") {
-        apiClient.setApiKey(settings.get_string("api-key"));
-        scheduleCheck(1);
+        apiClient = new PushbulletApi.ApiClient(settings.get_string("api-key"), refreshPushes);
+
+        refreshPushes();
     }
+}
+
+function refreshPushes() {
+    apiClient.getPushes(settings.get_double("last-checked"), function(response) {
+        if (response.error) {
+            notifications.showNotePush({ title: "Error", body: response.error.message });
+        }
+        else {
+            let filtered = response.pushes.slice(0, settings.get_int("max-push-count"));
+
+            for (n = filtered.length - 1; n >= 0; n--) {
+                notifications.showPush(filtered[n]);
+            }
+
+            // update last checked timestamp
+            settings.set_double("last-checked", response.pushes[0].modified);
+        }
+    });
 }
 
 /**
@@ -83,9 +61,5 @@ function enable() {
  */
 function disable() {
     notifications.unregister();
-
-    if (_timeoutId != 0) {
-        MainLoop.source_remove(_timeoutId);
-        _timeoutId = 0;
-    }
+    apiClient.close();
 }
