@@ -47,7 +47,7 @@ function refreshPushes() {
             let filtered = response.pushes.slice(0, settings.get_int("max-push-count"));
 
             for (n = filtered.length - 1; n >= 0; n--) {
-                notifications.showPush(filtered[n]);
+                notifications.handlePush(filtered[n]);
             }
 
             // update last checked timestamp
