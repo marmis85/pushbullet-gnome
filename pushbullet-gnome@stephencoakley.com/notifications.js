@@ -66,6 +66,13 @@ const NotificationSource = new Lang.Class({
     },
 
     _showNotification: function(push, notification) {
+        notification.connect("activated", Lang.bind(this, function(notification_) {
+            let handler = notification.connect("destroy", Lang.bind(this, function(notification__, reason__) {
+                notification.disconnect(handler);
+                this.showPush(push);
+                Main.panel.closeCalendar();
+            }));
+        }));
         this._source.notify(notification);
         this._notifications.set(push.iden, notification);
     },
