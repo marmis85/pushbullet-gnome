@@ -7,10 +7,11 @@ const MainLoop = imports.mainloop;
 const Pushbullet = imports.misc.extensionUtils.getCurrentExtension();
 const Notifications = Pushbullet.imports.notifications;
 const PushbulletApi = Pushbullet.imports.pushbulletApi;
+const EventStream = Pushbullet.imports.eventStream;
 const Settings = Pushbullet.imports.settings;
 
 
-let settings, notifications, apiClient;
+let settings, notifications, apiClient, socketClient;
 
 /**
  * Initializes the extension.
@@ -32,7 +33,8 @@ function enable() {
     notifications = new Notifications.NotificationSource();
 
     if (settings.get_string("api-key") != "") {
-        apiClient = new PushbulletApi.ApiClient(settings.get_string("api-key"), refreshPushes);
+        apiClient = new PushbulletApi.ApiClient(settings.get_string("api-key"));
+        socketClient = new EventStream.SocketClient(apiClient, refreshPushes);
 
         refreshPushes();
     }
@@ -61,5 +63,5 @@ function refreshPushes() {
  */
 function disable() {
     notifications.unregister();
-    apiClient.close();
+    socketClient.close();
 }
