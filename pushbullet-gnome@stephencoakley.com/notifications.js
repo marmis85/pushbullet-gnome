@@ -15,6 +15,8 @@ const NotificationSource = new Lang.Class({
 
     _init: function() {
         this._source = new MessageTray.Source("Pushbullet", "pushbullet");
+        this._source.policy.forceExpanded = true;
+
         Main.messageTray.add(this._source);
 
         this._notifications = new Map();
