@@ -30,11 +30,11 @@ function init(metadata) {
  */
 function enable() {
     settings = new Settings.Settings("org.gnome.shell.extensions.pushbullet");
-    notifications = new Notifications.NotificationSource();
 
     if (settings.get_string("api-key") != "") {
-        apiClient = new PushbulletApi.ApiClient(settings.get_string("api-key"));
+        apiClient = new PushbulletApi.ApiClient(settings);
         socketClient = new EventStream.SocketClient(apiClient, refreshPushes);
+        notifications = new Notifications.NotificationSource(apiClient);
 
         refreshPushes();
     }

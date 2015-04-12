@@ -1,4 +1,3 @@
-const Gio = imports.gi.Gio;
 const GLib = imports.gi.GLib;
 const Lang = imports.lang;
 const Main = imports.ui.main;
@@ -13,7 +12,8 @@ const Pushbullet = imports.misc.extensionUtils.getCurrentExtension();
 const NotificationSource = new Lang.Class({
     Name: "NotificationSource",
 
-    _init: function() {
+    _init: function(apiClient) {
+        this._apiClient = apiClient;
         this._source = new MessageTray.Source("Pushbullet", "pushbullet");
         this._source.policy.forceExpanded = true;
 
@@ -50,25 +50,35 @@ const NotificationSource = new Lang.Class({
     },
 
     showNotePush: function(push) {
-        let notification = new MessageTray.Notification(this._source, push.title, push.body);
+        let title = "" + (push.title ? push.title : "Note");
+        let notification = new MessageTray.Notification(this._source, title, push.body);
         this._showNotification(push, notification);
     },
 
     showLinkPush: function(push) {
-        let notification = new MessageTray.Notification(this._source, push.title, push.url);
+        let title = "" + (push.title ? push.title : "Link");
+        let body = push.url + (push.body ? "\n" + push.body : "");
+        let notification = new MessageTray.Notification(this._source, title, body);
         this._showNotification(push, notification);
     },
 
     showFilePush: function(push) {
-        let notification = new MessageTray.Notification(this._source, push.title, push.file_name);
-        notification.addAction("Download File", Lang.bind(this, this.openFile, push.file_url));
+        let title = "" + (push.title ? push.title : "File");
+        let body = push.file_name + (push.body ? "\n" + push.body : "");
+        let notification = new MessageTray.Notification(this._source, title, body);
+        notification.addAction("Download File", Lang.bind(this, this.saveFile, push.file_url, push.file_name));
         this._showNotification(push, notification);
     },
 
     _showNotification: function(push, notification) {
+        let handler = notification.connect("destroy", Lang.bind(this, function(notification__, reason__) {
+            notification.disconnect(handler);
+            this._notifications.delete(push.iden);
+        }));
         notification.connect("activated", Lang.bind(this, function(notification_) {
-            let handler = notification.connect("destroy", Lang.bind(this, function(notification__, reason__) {
-                notification.disconnect(handler);
+            notification.disconnect(handler);
+            let handler_ = notification.connect("destroy", Lang.bind(this, function(notification__, reason__) {
+                notification.disconnect(handler_);
                 this.showPush(push);
                 Main.panel.closeCalendar();
             }));
@@ -77,15 +87,36 @@ const NotificationSource = new Lang.Class({
         this._notifications.set(push.iden, notification);
     },
 
+    showDownloadComplete: function(file_path) {
+        var folder_path = file_path.substring(0, file_path.lastIndexOf("/") + 1);
+
+        let notification = new MessageTray.Notification(this._source, "Download Complete", file_path);
+        notification.addAction("Open File", Lang.bind(this, this.openFile, file_path));
+        notification.addAction("View Folder", Lang.bind(this, this.openFile, folder_path));
+        notification.connect("activated", Lang.bind(this, function(notification_) {
+            let handler = notification.connect("destroy", Lang.bind(this, function(notification__, reason__) {
+                notification.disconnect(handler);
+                this.showDownloadComplete(file_path);
+                Main.panel.closeCalendar();
+            }));
+        }));
+        this._source.notify(notification);
+    },
+
     dismiss: function(push) {
         let notification = this._notifications.get(push.iden);
         if (notification) {
             this._notifications.get(push.iden).destroy(MessageTray.NotificationDestroyedReason.DISMISSED);
-            this._notifications.delete(push.iden);
         }
     },
 
-    openFile: function(file_url) {
-        GLib.spawn_command_line_async("xdg-open \"" + file_url + "\"");
+    openFile: function(file_path) {
+        GLib.spawn_command_line_async("xdg-open \"" + file_path + "\"");
+    },
+
+    saveFile: function(file_url, file_name) {
+        this._apiClient.downloadFile(file_url, file_name, Lang.bind(this, function(dest_file) {
+            if (dest_file) this.showDownloadComplete(dest_file);
+        }));
     }
 });
