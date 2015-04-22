@@ -6,6 +6,11 @@
         <summary>Pushbullet API Key</summary>
         <description>Your Pushbullet API key.</description>
     </key>
+    <key name="downloads-folder" type="s">
+        <default>""</default>
+        <summary>Downloads folder</summary>
+        <description>Download files in this folder.</description>
+    </key>
     <key name="last-checked" type="d">
         <default>0.0</default>
         <summary>Last Checked Timestamp</summary>

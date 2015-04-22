@@ -1,4 +1,5 @@
 const ExtensionUtils = imports.misc.extensionUtils;
+const GLib = imports.gi.GLib;
 const Gio = imports.gi.Gio;
 const GioSSS = Gio.SettingsSchemaSource;
 const Lang = imports.lang;
@@ -32,5 +33,15 @@ const Settings = new Lang.Class({
                     + extension.metadata.uuid + '. Please check your installation.');
 
         this.parent({ settings_schema: schemaObj });
+    },
+
+    getDownloadsFolder: function() {
+        let downloads_folder = this.get_string("downloads-folder");
+        if (!downloads_folder) {
+            downloads_folder = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD);
+            this.set_string("downloads-folder", downloads_folder);
+        }
+
+        return downloads_folder;
     }
 });

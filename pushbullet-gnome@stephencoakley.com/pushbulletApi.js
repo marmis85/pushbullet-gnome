@@ -1,3 +1,4 @@
+const GLib = imports.gi.GLib;
 const Lang = imports.lang;
 const Soup = imports.gi.Soup;
 
@@ -5,19 +6,14 @@ const Soup = imports.gi.Soup;
 const ApiClient = new Lang.Class({
     Name: "ApiClient",
 
-    _init: function() {
-        this._httpSession = new Soup.SessionAsync({ ssl_use_system_ca_file: true });
+    _init: function(settings) {
+        this._settings = settings;
+        this._apiKey = settings.get_string("api-key");
+
+        this._httpSession = new Soup.Session({ ssl_use_system_ca_file: true });
         Soup.Session.prototype.add_feature.call(this._httpSession, new Soup.ProxyResolverDefault());
 
         this._httpSession.connect("authenticate", Lang.bind(this, this._authenticate));
-    },
-
-    getApiKey: function() {
-        return this._apiKey;
-    },
-
-    setApiKey: function(apiKey) {
-        this._apiKey = apiKey;
     },
 
     getPushes: function(modifiedAfter, callback) {
@@ -26,6 +22,20 @@ const ApiClient = new Lang.Class({
             uri: new Soup.URI("https://api.pushbullet.com/v2/pushes?modified_after=" + (modifiedAfter ? modifiedAfter : 0))
         });
         this._sendRequest(message, callback);
+    },
+
+    downloadFile: function(file_url, file_name, callback) {
+        let message = new Soup.Message({
+            method: "GET",
+            uri: new Soup.URI(file_url)
+        });
+
+        this._httpSession.queue_message(message, Lang.bind(this, function(session, message, file_name, callback) {
+            let downloads_folder = this._settings.getDownloadsFolder();
+            let dest_file = downloads_folder + "/" + file_name;
+            let ret = GLib.file_set_contents(dest_file, message.response_body_data.get_data());
+            return callback(dest_file);
+        }, file_name, callback));
     },
 
     _sendRequest: function(message, callback) {
