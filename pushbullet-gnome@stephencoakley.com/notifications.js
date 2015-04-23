@@ -6,20 +6,14 @@ const MessageTray = imports.ui.messageTray;
 const Pushbullet = imports.misc.extensionUtils.getCurrentExtension();
 
 
-/**
- * The notification source for Pushbullet notifications.
- */
-const NotificationSource = new Lang.Class({
-    Name: "NotificationSource",
+const NotificationManager = new Lang.Class({
+    Name: "NotificationManager",
 
-    _init: function(apiClient) {
+    _init: function(apiClient, maxPushCount) {
         this._apiClient = apiClient;
-        this._source = new MessageTray.Source("Pushbullet", "pushbullet");
-        this._source.policy.forceExpanded = true;
+        this._source = new NotificationSource(maxPushCount);
 
         Main.messageTray.add(this._source);
-
-        this._notifications = new Map();
     },
 
     /**
@@ -29,94 +23,135 @@ const NotificationSource = new Lang.Class({
         this._source.destroy(MessageTray.NotificationDestroyedReason.SOURCE_CLOSED);
     },
 
-    handlePush: function(push) {
-        this.dismiss(push)
-
-        if (push.active && !push.dismissed) {
-            this.showPush(push);
-        }
-    },
-
     showPush: function(push) {
-        if (push.type == "note") {
-            this.showNotePush(push);
+        this._clearPush(push);
+
+        if (!push.active || push.dismissed)
+            return;
+
+        switch (push.type) {
+            case "note":
+                var notification = this._noteNotification(push);
+                break;
+            case "link":
+                var notification = this._linkNotification(push);
+                break;
+            case "file":
+                var notification = this._fileNotification(push);
+                break;
+            default:
+                return;
         }
-        else if (push.type == "link") {
-            this.showLinkPush(push);
-        }
-        else if (push.type == "file") {
-            this.showFilePush(push);
-        }
+        notification.push = push;
+
+        this._showNotification(notification);
     },
 
-    showNotePush: function(push) {
+    _noteNotification: function(push) {
         let title = "" + (push.title ? push.title : "Note");
-        let notification = new MessageTray.Notification(this._source, title, push.body);
-        this._showNotification(push, notification);
+        return new MessageTray.Notification(this._source, title, push.body);
     },
 
-    showLinkPush: function(push) {
+    _linkNotification: function(push) {
         let title = "" + (push.title ? push.title : "Link");
         let body = push.url + (push.body ? "\n" + push.body : "");
-        let notification = new MessageTray.Notification(this._source, title, body);
-        this._showNotification(push, notification);
+        return new MessageTray.Notification(this._source, title, body);
     },
 
-    showFilePush: function(push) {
+    _fileNotification: function(push) {
         let title = "" + (push.title ? push.title : "File");
         let body = push.file_name + (push.body ? "\n" + push.body : "");
         let notification = new MessageTray.Notification(this._source, title, body);
-        notification.addAction("Download File", Lang.bind(this, this.saveFile, push.file_url, push.file_name));
-        this._showNotification(push, notification);
+        notification.addAction("Download File", Lang.bind(this, this._saveFile, push.file_url, push.file_name));
+        return notification;
     },
 
-    _showNotification: function(push, notification) {
-        let handler = notification.connect("destroy", Lang.bind(this, function(notification__, reason__) {
-            notification.disconnect(handler);
-            this._notifications.delete(push.iden);
+    _showNotification: function(notification) {
+        notification.destroyHandler = notification.connect("destroy", Lang.bind(this, function(notification, reason) {
+            notification.disconnect(notification.destroyHandler);
+            if (reason == MessageTray.NotificationDestroyedReason.DISMISSED) {
+                //TODO: call dismiss on the API
+            }
         }));
-        notification.connect("activated", Lang.bind(this, function(notification_) {
-            notification.disconnect(handler);
-            let handler_ = notification.connect("destroy", Lang.bind(this, function(notification__, reason__) {
-                notification.disconnect(handler_);
-                this.showPush(push);
-                Main.panel.closeCalendar();
-            }));
+
+        notification.connect("activated", Lang.bind(this, function(notification) {
+            notification.disconnect(notification.destroyHandler);
+            this.showPush(notification.push);
+            Main.panel.closeCalendar();
         }));
+
         this._source.notify(notification);
-        this._notifications.set(push.iden, notification);
     },
 
-    showDownloadComplete: function(file_path) {
+    _showDownloadComplete: function(file_path) {
         var folder_path = file_path.substring(0, file_path.lastIndexOf("/") + 1);
 
         let notification = new MessageTray.Notification(this._source, "Download Complete", file_path);
-        notification.addAction("Open File", Lang.bind(this, this.openFile, file_path));
-        notification.addAction("View Folder", Lang.bind(this, this.openFile, folder_path));
+
+        notification.addAction("Open File", Lang.bind(this, this._openFile, file_path));
+        notification.addAction("View Folder", Lang.bind(this, this._openFile, folder_path));
+
         notification.connect("activated", Lang.bind(this, function(notification_) {
-            let handler = notification.connect("destroy", Lang.bind(this, function(notification__, reason__) {
-                notification.disconnect(handler);
-                this.showDownloadComplete(file_path);
-                Main.panel.closeCalendar();
-            }));
+            this._showDownloadComplete(file_path);
+            Main.panel.closeCalendar();
         }));
+
         this._source.notify(notification);
     },
 
-    dismiss: function(push) {
-        let notification = this._notifications.get(push.iden);
-        if (notification) {
-            this._notifications.get(push.iden).destroy(MessageTray.NotificationDestroyedReason.DISMISSED);
-        }
-    },
-
-    openFile: function(file_path) {
+    _openFile: function(file_path) {
         GLib.spawn_command_line_async("xdg-open \"" + file_path + "\"");
     },
 
-    saveFile: function(file_url, file_name) {
+    _saveFile: function(file_url, file_name) {
         this._apiClient.downloadFile(file_url, file_name, Lang.bind(this, function(dest_file) {
-            if (dest_file) this.showDownloadComplete(dest_file);
+            if (dest_file) this._showDownloadComplete(dest_file);
         }));
+    },
+
+    _clearPush: function(push) {
+        this._source.notifications.forEach(function(notification, index, notifications) {
+            if (notification.push.iden == push.iden) notification.destroy(MessageTray.NotificationDestroyedReason.EXPIRED);
+        });
+    }
+});
+
+
+/**
+ * The notification source for Pushbullet notifications.
+ */
+const NotificationSource = new Lang.Class({
+    Name: "NotificationSource",
+    Extends: MessageTray.Source,
+
+    _init: function(maxPushCount) {
+        this.parent("Pushbullet", "pushbullet");
+        this.policy.forceExpanded = true;
+        this.maxPushCount = maxPushCount;
+    },
+
+    pushNotification: function(notification) {
+        if (this.notifications.indexOf(notification) >= 0)
+            return;
+
+        while (this.notifications.length >= this.maxPushCount)
+            this.notifications.shift().destroy(MessageTray.NotificationDestroyedReason.EXPIRED);
+
+        notification.connect('destroy', Lang.bind(this, this._onNotificationDestroy));
+        notification.connect('acknowledged-changed', Lang.bind(this, this.countUpdated));
+        this.notifications.push(notification);
+        this.emit('notification-added', notification);
+
+        this.countUpdated();
+    },
+
+    _onNotificationDestroy: function(notification) {
+        let index = this.notifications.indexOf(notification);
+        if (index < 0)
+            return;
+
+        this.notifications.splice(index, 1);
+
+        this.countUpdated();
     }
 });

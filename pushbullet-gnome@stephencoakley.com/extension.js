@@ -34,7 +34,7 @@ function enable() {
     if (settings.get_string("api-key") != "") {
         apiClient = new PushbulletApi.ApiClient(settings);
         socketClient = new EventStream.SocketClient(apiClient, refreshPushes);
-        notifications = new Notifications.NotificationSource(apiClient);
+        notifications = new Notifications.NotificationManager(apiClient, settings.get_int("max-push-count"));
 
         refreshPushes();
     }
@@ -46,14 +46,13 @@ function refreshPushes() {
             notifications.showNotePush({ title: "Error", body: response.error.message });
         }
         else {
-            let filtered = response.pushes.slice(0, settings.get_int("max-push-count"));
-
-            for (n = filtered.length - 1; n >= 0; n--) {
-                notifications.handlePush(filtered[n]);
-            }
+            let modified = response.pushes[0].modified;
+            response.pushes.reverse().forEach(function(push, index, pushes) {
+                notifications.showPush(push);
+            });
 
             // update last checked timestamp
-            settings.set_double("last-checked", response.pushes[0].modified);
+            settings.set_double("last-checked", modified);
         }
     });
 }
