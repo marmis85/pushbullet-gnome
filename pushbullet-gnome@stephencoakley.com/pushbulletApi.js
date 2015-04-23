@@ -19,7 +19,7 @@ const ApiClient = new Lang.Class({
     getPushes: function(modifiedAfter, callback) {
         let message = new Soup.Message({
             method: "GET",
-            uri: new Soup.URI("https://api.pushbullet.com/v2/pushes?modified_after=" + (modifiedAfter ? modifiedAfter : 0))
+            uri: new Soup.URI("https://api.pushbullet.com/v2/pushes?" + (modifiedAfter ? "modified_after=" + modifiedAfter : "active=true"))
         });
         this._sendRequest(message, callback);
     },
